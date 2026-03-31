@@ -231,9 +231,11 @@ async function getDigest(){
   return _digest;
 }
 function spH(x){return Object.assign({Accept:'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},x||{});}
+function spOpts(x){return {headers:spH(x),credentials:'include'};}
+function spOptsW(x,body){return {method:'POST',headers:spH(x),credentials:'include',body:JSON.stringify(body)};}
 
 async function ensureList(){
-  var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')",{headers:spH()});
+  var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')",{headers:spH(),credentials:'include'});
   if(r.ok) return;
   var dg=await getDigest();
   await fetch(SP_SITE+'/_api/web/lists',{method:'POST',headers:spH({'X-RequestDigest':dg}),
@@ -248,7 +250,7 @@ async function ensureList(){
 async function spGet(name,month){
   var key=name+'_'+month;
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=Id,Title,SubmitterName,Month,RatingsJson,NotesJson,SubmittedAt";
-  var r=await fetch(url,{headers:spH()});
+  var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return null;
   var d=await r.json(); var items=d.d&&d.d.results?d.d.results:[];
   return items.length?items[0]:null;
@@ -256,16 +258,26 @@ async function spGet(name,month){
 
 async function spGetMonth(month){
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Month eq '"+encodeURIComponent(month)+"'&$select=Id,Title,SubmitterName,Month,RatingsJson,NotesJson,SubmittedAt&$orderby=SubmittedAt asc&$top=100";
-  var r=await fetch(url,{headers:spH()});
+  var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return [];
   var d=await r.json(); return d.d&&d.d.results?d.d.results:[];
+}
+
+var _listItemType=null;
+async function getListItemType(){
+  if(_listItemType) return _listItemType;
+  var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')?$select=ListItemEntityTypeFullName",{headers:spH(),credentials:'include'});
+  var d=await r.json();
+  _listItemType=d.d.ListItemEntityTypeFullName;
+  return _listItemType;
 }
 
 async function spUpsert(name,month,ratings,notes){
   var dg=await getDigest();
   var key=name+'_'+month;
   var existing=await spGet(name,month);
-  var payload={__metadata:{type:'SP.Data.'+SP_LIST+'ListItem'},Title:key,SubmitterName:name,Month:month,
+  var itemType=await getListItemType();
+  var payload={__metadata:{type:itemType},Title:key,SubmitterName:name,Month:month,
     RatingsJson:JSON.stringify(ratings),NotesJson:JSON.stringify(notes||{}),SubmittedAt:new Date().toISOString()};
   if(existing){
     var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
@@ -281,7 +293,7 @@ async function spUpsert(name,month,ratings,notes){
 async function spGetNotes(month){
   var key='_notes_'+month;
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=NotesJson";
-  var r=await fetch(url,{headers:spH()});
+  var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return {};
   var d=await r.json(); var items=d.d&&d.d.results?d.d.results:[];
   if(!items.length) return {};
@@ -292,10 +304,11 @@ async function spSaveNotes(month,notes){
   var dg=await getDigest();
   var key='_notes_'+month;
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=Id";
-  var r=await fetch(url,{headers:spH()});
+  var r=await fetch(url,{headers:spH(),credentials:'include'});
   var existing=null;
   if(r.ok){var d=await r.json();var items=d.d&&d.d.results?d.d.results:[];existing=items.length?items[0]:null;}
-  var payload={__metadata:{type:'SP.Data.'+SP_LIST+'ListItem'},Title:key,SubmitterName:'_notes_',Month:month,
+  var itemType2=await getListItemType();
+  var payload={__metadata:{type:itemType2},Title:key,SubmitterName:'_notes_',Month:month,
     NotesJson:JSON.stringify(notes),RatingsJson:'[]',SubmittedAt:new Date().toISOString()};
   if(existing){
     await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
