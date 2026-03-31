@@ -224,7 +224,7 @@ var SLABELS = {1:'Severe Risk',2:'At Risk',3:'Mixed/Neutral',4:'Healthy',5:'Full
 var _digest=null, _digestExp=0;
 async function getDigest(){
   if(_digest && Date.now()<_digestExp) return _digest;
-  var r=await fetch(SP_SITE+'/_api/contextinfo',{method:'POST',headers:{Accept:'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'}});
+  var r=await fetch(SP_SITE+'/_api/contextinfo',{method:'POST',headers:{Accept:'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},credentials:'include'});
   var d=await r.json();
   _digest=d.d.GetContextWebInformation.FormDigestValue;
   _digestExp=Date.now()+1700000;
@@ -238,11 +238,11 @@ async function ensureList(){
   var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')",{headers:spH(),credentials:'include'});
   if(r.ok) return;
   var dg=await getDigest();
-  await fetch(SP_SITE+'/_api/web/lists',{method:'POST',headers:spH({'X-RequestDigest':dg}),
+  await fetch(SP_SITE+'/_api/web/lists',{method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',
     body:JSON.stringify({__metadata:{type:'SP.List'},AllowContentTypes:true,BaseTemplate:100,
     ContentTypesEnabled:false,Description:'PowerOptix Customer Health Assessment',Title:SP_LIST})});
   for(var col of [{n:'SubmitterName',t:2},{n:'Month',t:2},{n:'SubmittedAt',t:2},{n:'RatingsJson',t:3},{n:'NotesJson',t:3}]){
-    await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/fields",{method:'POST',headers:spH({'X-RequestDigest':dg}),
+    await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/fields",{method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',
       body:JSON.stringify({__metadata:{type:'SP.Field'},Title:col.n,FieldTypeKind:col.t,Required:false,EnforceUniqueValues:false})});
   }
 }
@@ -281,11 +281,11 @@ async function spUpsert(name,month,ratings,notes){
     RatingsJson:JSON.stringify(ratings),NotesJson:JSON.stringify(notes||{}),SubmittedAt:new Date().toISOString()};
   if(existing){
     var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
-      {method:'POST',headers:spH({'X-RequestDigest':dg,'X-HTTP-Method':'MERGE','IF-MATCH':'*'}),body:JSON.stringify(payload)});
+      {method:'POST',headers:spH({'X-RequestDigest':dg,'X-HTTP-Method':'MERGE','IF-MATCH':'*'}),credentials:'include',body:JSON.stringify(payload)});
     return r.ok||r.status===204;
   } else {
     var r2=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items",
-      {method:'POST',headers:spH({'X-RequestDigest':dg}),body:JSON.stringify(payload)});
+      {method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',body:JSON.stringify(payload)});
     return r2.ok;
   }
 }
@@ -312,10 +312,10 @@ async function spSaveNotes(month,notes){
     NotesJson:JSON.stringify(notes),RatingsJson:'[]',SubmittedAt:new Date().toISOString()};
   if(existing){
     await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
-      {method:'POST',headers:spH({'X-RequestDigest':dg,'X-HTTP-Method':'MERGE','IF-MATCH':'*'}),body:JSON.stringify(payload)});
+      {method:'POST',headers:spH({'X-RequestDigest':dg,'X-HTTP-Method':'MERGE','IF-MATCH':'*'}),credentials:'include',body:JSON.stringify(payload)});
   } else {
     await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items",
-      {method:'POST',headers:spH({'X-RequestDigest':dg}),body:JSON.stringify(payload)});
+      {method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',body:JSON.stringify(payload)});
   }
 }
 
