@@ -230,13 +230,28 @@ var SLABELS = {1:'Severe Risk',2:'At Risk',3:'Mixed/Neutral',4:'Healthy',5:'Full
 var _digest=null, _digestExp=0;
 async function getDigest(){
   if(_digest && Date.now()<_digestExp) return _digest;
-  var r=await fetch(SP_SITE+'/_api/contextinfo',{method:'POST',headers:{Accept:'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata'},credentials:'include'});
-  var d=await r.json();
-  _digest=d.FormDigestValue;
-  _digestExp=Date.now()+1700000;
-  return _digest;
+  // Try verbose first (works same-origin), fall back to GET-based extraction (works cross-origin)
+  try {
+    var r=await fetch(SP_SITE+'/_api/contextinfo',{method:'POST',headers:{Accept:'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},credentials:'include'});
+    if(r.ok){
+      var d=await r.json();
+      if(d.d&&d.d.GetContextWebInformation){
+        _digest=d.d.GetContextWebInformation.FormDigestValue;
+        _digestExp=Date.now()+1700000;
+        return _digest;
+      }
+    }
+  } catch(e){}
+  // Cross-origin fallback: fetch a lightweight SP page and extract digest from response header
+  try {
+    var r2=await fetch(SP_SITE+'/_api/web/title',{method:'GET',headers:{Accept:'application/json;odata=verbose'},credentials:'include'});
+    var digest=r2.headers.get('X-RequestDigest')||r2.headers.get('x-requestdigest');
+    if(digest){_digest=digest;_digestExp=Date.now()+1700000;return _digest;}
+  } catch(e){}
+  // Last resort: prompt user to open SharePoint
+  throw new Error('Could not obtain SharePoint request digest. Please ensure you are signed into SharePoint in this browser.');
 }
-function spH(x){return Object.assign({Accept:'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata'},x||{});}
+function spH(x){return Object.assign({Accept:'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},x||{});}
 function spOpts(x){return {headers:spH(x),credentials:'include'};}
 function spOptsW(x,body){return {method:'POST',headers:spH(x),credentials:'include',body:JSON.stringify(body)};}
 
@@ -247,7 +262,7 @@ async function spGet(name,month){
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=Id,Title,SubmitterName,Month,RatingsJson,NotesJson,SubmittedAt";
   var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return null;
-  var d=await r.json(); var items=d.value||[];
+  var d=await r.json(); var items=d.d&&d.d.results?d.d.results:[];
   return items.length?items[0]:null;
 }
 
@@ -255,14 +270,14 @@ async function spGetMonth(month){
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Month eq '"+encodeURIComponent(month)+"'&$select=Id,Title,SubmitterName,Month,RatingsJson,NotesJson,SubmittedAt&$orderby=SubmittedAt asc&$top=100";
   var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return [];
-  var d=await r.json(); return d.value||[];
+  var d=await r.json(); return d.d&&d.d.results?d.d.results:[];
 }
 
 async function spUpsert(name,month,ratings,notes){
   var dg=await getDigest();
   var key=name+'_'+month;
   var existing=await spGet(name,month);
-  var payload={Title:key,SubmitterName:name,Month:month,
+  var payload={__metadata:{type:'SP.Data.CustomerHealthAssessmentsListItem'},Title:key,SubmitterName:name,Month:month,
     RatingsJson:JSON.stringify(ratings),NotesJson:JSON.stringify(notes||{}),SubmittedAt:new Date().toISOString()};
   if(existing){
     var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
@@ -280,7 +295,7 @@ async function spGetNotes(month){
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=NotesJson";
   var r=await fetch(url,{headers:spH(),credentials:'include'});
   if(!r.ok) return {};
-  var d=await r.json(); var items=d.value||[];
+  var d=await r.json(); var items=d.d&&d.d.results?d.d.results:[];
   if(!items.length) return {};
   try{return JSON.parse(items[0].NotesJson||'{}');}catch(e){return {};}
 }
@@ -291,8 +306,8 @@ async function spSaveNotes(month,notes){
   var url=SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=Title eq '"+encodeURIComponent(key)+"'&$top=1&$select=Id";
   var r=await fetch(url,{headers:spH(),credentials:'include'});
   var existing=null;
-  if(r.ok){var d=await r.json();var items=d.value||[];existing=items.length?items[0]:null;}
-  var payload={Title:key,SubmitterName:'_notes_',Month:month,
+  if(r.ok){var d=await r.json();var items=d.d&&d.d.results?d.d.results:[];existing=items.length?items[0]:null;}
+  var payload={__metadata:{type:'SP.Data.CustomerHealthAssessmentsListItem'},Title:key,SubmitterName:'_notes_',Month:month,
     NotesJson:JSON.stringify(notes),RatingsJson:'[]',SubmittedAt:new Date().toISOString()};
   if(existing){
     await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
