@@ -234,18 +234,7 @@ function spH(x){return Object.assign({Accept:'application/json;odata=verbose','C
 function spOpts(x){return {headers:spH(x),credentials:'include'};}
 function spOptsW(x,body){return {method:'POST',headers:spH(x),credentials:'include',body:JSON.stringify(body)};}
 
-async function ensureList(){
-  var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')",{headers:spH(),credentials:'include'});
-  if(r.ok) return;
-  var dg=await getDigest();
-  await fetch(SP_SITE+'/_api/web/lists',{method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',
-    body:JSON.stringify({__metadata:{type:'SP.List'},AllowContentTypes:true,BaseTemplate:100,
-    ContentTypesEnabled:false,Description:'PowerOptix Customer Health Assessment',Title:SP_LIST})});
-  for(var col of [{n:'SubmitterName',t:2},{n:'Month',t:2},{n:'SubmittedAt',t:2},{n:'RatingsJson',t:3},{n:'NotesJson',t:3}]){
-    await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/fields",{method:'POST',headers:spH({'X-RequestDigest':dg}),credentials:'include',
-      body:JSON.stringify({__metadata:{type:'SP.Field'},Title:col.n,FieldTypeKind:col.t,Required:false,EnforceUniqueValues:false})});
-  }
-}
+// List pre-created: CustomerHealthAssessments on CustomerExperienceLeadership site
 
 async function spGet(name,month){
   var key=name+'_'+month;
@@ -263,21 +252,11 @@ async function spGetMonth(month){
   var d=await r.json(); return d.d&&d.d.results?d.d.results:[];
 }
 
-var _listItemType=null;
-async function getListItemType(){
-  if(_listItemType) return _listItemType;
-  var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')?$select=ListItemEntityTypeFullName",{headers:spH(),credentials:'include'});
-  var d=await r.json();
-  _listItemType=d.d.ListItemEntityTypeFullName;
-  return _listItemType;
-}
-
 async function spUpsert(name,month,ratings,notes){
   var dg=await getDigest();
   var key=name+'_'+month;
   var existing=await spGet(name,month);
-  var itemType=await getListItemType();
-  var payload={__metadata:{type:itemType},Title:key,SubmitterName:name,Month:month,
+  var payload={__metadata:{type:'SP.Data.CustomerHealthAssessmentsListItem'},Title:key,SubmitterName:name,Month:month,
     RatingsJson:JSON.stringify(ratings),NotesJson:JSON.stringify(notes||{}),SubmittedAt:new Date().toISOString()};
   if(existing){
     var r=await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
@@ -307,8 +286,7 @@ async function spSaveNotes(month,notes){
   var r=await fetch(url,{headers:spH(),credentials:'include'});
   var existing=null;
   if(r.ok){var d=await r.json();var items=d.d&&d.d.results?d.d.results:[];existing=items.length?items[0]:null;}
-  var itemType2=await getListItemType();
-  var payload={__metadata:{type:itemType2},Title:key,SubmitterName:'_notes_',Month:month,
+  var payload={__metadata:{type:'SP.Data.CustomerHealthAssessmentsListItem'},Title:key,SubmitterName:'_notes_',Month:month,
     NotesJson:JSON.stringify(notes),RatingsJson:'[]',SubmittedAt:new Date().toISOString()};
   if(existing){
     await fetch(SP_SITE+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+existing.Id+")",
@@ -436,7 +414,6 @@ async function doSubmit(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Saving...';
   showStatus('Saving to SharePoint...','warn');
   try{
-    await ensureList();
     var ok=await spUpsert(n,m,ratings,{});
     if(ok){
       document.getElementById('already-ok').style.display='block';
